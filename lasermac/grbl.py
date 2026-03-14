@@ -83,7 +83,52 @@ class GrblController:
     def list_ports() -> list[str]:
         """List available serial ports (macOS: /dev/cu.*)."""
         ports = serial.tools.list_ports.comports()
-        return [p.device for p in ports if "cu." in p.device or "tty." in p.device]
+        result = []
+        for p in ports:
+            dev = p.device
+            if "cu." not in dev and "tty." not in dev:
+                continue
+            # Skip Bluetooth and debug ports
+            skip = ["Bluetooth", "debug", "wlan", "console"]
+            if any(s.lower() in dev.lower() for s in skip):
+                continue
+            result.append(dev)
+        return result
+
+    @staticmethod
+    def list_ports_detail() -> list[dict]:
+        """List serial ports with device info (name, chip, VID/PID)."""
+        import serial.tools.list_ports
+        ports = serial.tools.list_ports.comports()
+        result = []
+        for p in ports:
+            dev = p.device
+            skip = ["Bluetooth", "debug", "wlan", "console"]
+            if any(s.lower() in dev.lower() for s in skip):
+                continue
+            if "cu." not in dev and "tty." not in dev:
+                continue
+            # Identify common laser/CNC chips
+            desc = p.description or ""
+            name = p.name or dev.split("/")[-1]
+            chip = "Unknown"
+            if p.vid == 0x1A86 or "ch340" in desc.lower() or "ch341" in desc.lower():
+                chip = "CH340/CH341"
+            elif p.vid == 0x10C4 or "cp210" in desc.lower():
+                chip = "CP2102"
+            elif p.vid == 0x0403 or "ftdi" in desc.lower():
+                chip = "FTDI"
+            elif "esp" in desc.lower() or "esp32" in desc.lower():
+                chip = "ESP32"
+            result.append({
+                "device": dev,
+                "name": name,
+                "description": desc or "Serial Device",
+                "chip": chip,
+                "vid": p.vid,
+                "pid": p.pid,
+            })
+        return result
 
     def connect(self, port: str, baud: int = 115200) -> bool:
         """Connect to GRBL device."""

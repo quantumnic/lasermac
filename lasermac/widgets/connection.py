@@ -68,21 +68,50 @@ class ConnectionPanel(ctk.CTkFrame):
         self.refresh_ports()
 
     def refresh_ports(self) -> None:
-        """Refresh available serial ports."""
-        ports = GrblController.list_ports()
-        if ports:
-            self.port_menu.configure(values=ports)
-            self.port_var.set(ports[0])
+        """Refresh available serial ports with device info."""
+        details = GrblController.list_ports_detail()
+        if details:
+            # Build display labels: "cu.usbserial-0001 [CH340]"
+            labels = [f"{d['device']}  [{d['chip']}]" for d in details]
+            self._port_map = {lbl: d["device"] for lbl, d in zip(labels, details)}
+            self.port_menu.configure(values=labels)
+            self.port_var.set(labels[0])
+            # Show device info in status
+            d = details[0]
+            self.status_label.configure(
+                text=f"● Found: {d['description'][:40]}", text_color="#e3b341"
+            )
         else:
+            self._port_map = {}
             self.port_menu.configure(values=["(none)"])
             self.port_var.set("(none)")
+            self.status_label.configure(text="● No devices found", text_color="#ff6b6b")
+
+        # Schedule next auto-scan in 2s if not connected
+        if not self.grbl.connected:
+            self.after(2000, self._auto_scan)
+
+    def _auto_scan(self) -> None:
+        """Auto-scan for newly connected devices."""
+        if not self.grbl.connected:
+            old = self.port_var.get()
+            self.refresh_ports()
+            new = self.port_var.get()
+            if new != "(none)" and new != old:
+                # New device plugged in — flash the button
+                self.connect_btn.configure(fg_color="#e3b341", hover_color="#d4a017")
+                self.after(1000, lambda: self.connect_btn.configure(
+                    fg_color="#2ea043", hover_color="#3fb950"
+                ))
 
     def toggle_connection(self) -> None:
         """Connect or disconnect."""
         if self.grbl.connected:
             self.grbl.disconnect()
         else:
-            port = self.port_var.get()
+            label = self.port_var.get()
+            # Resolve label → actual device path
+            port = getattr(self, "_port_map", {}).get(label, label.split()[0])
             baud = int(self.baud_var.get())
             if port and port != "(none)":
                 self.grbl.connect(port, baud)
