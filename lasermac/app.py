@@ -5,12 +5,16 @@ Free macOS laser engraver controller for GRBL machines.
 
 from __future__ import annotations
 
+import webbrowser
+
 import customtkinter as ctk
 
+from lasermac import updater
 from lasermac.grbl import GrblController
 from lasermac.widgets.connection import ConnectionPanel
 from lasermac.widgets.console import ConsolePanel
 from lasermac.widgets.controls import ControlsPanel
+from lasermac.widgets.draw_canvas import DrawCanvas
 from lasermac.widgets.job_panel import JobPanel
 
 
@@ -141,6 +145,20 @@ class LaserMacApp(ctk.CTk):
 
         # Check for updates in background
         updater.check_async(self._on_update_result)
+
+    def _on_update_result(self, result: dict | None) -> None:
+        """Callback from update checker (runs in background thread)."""
+        if result:
+            self._update_url = result["url"]
+            self._update_banner.configure(
+                text=f"🔔 v{result['version']} available — Click to download"
+            )
+            self._update_banner.grid(row=0, column=0, sticky="ew", pady=(0, 3))
+
+    def _open_update_url(self) -> None:
+        """Open the update URL in browser."""
+        if self._update_url:
+            webbrowser.open(self._update_url)
 
     def _laser_test_on(self) -> None:
         """Turn laser on at low power for testing."""
