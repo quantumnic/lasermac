@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lasermac"
+version = "0.1.0"
+description = "Free macOS laser engraver controller for GRBL machines"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+keywords = ["laser", "engraver", "grbl", "cnc", "gcode", "totem"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "customtkinter>=5.2.0",
+    "pyserial>=3.5",
+    "Pillow>=10.0",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "svgpathtools>=1.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.8.0"]
+
+[project.scripts]
+lasermac = "lasermac.app:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
