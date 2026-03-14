@@ -174,6 +174,7 @@ class GcodeSender:
         self._stop_flag = False
 
         import threading
+
         t = threading.Thread(target=self._send_loop, daemon=True)
         t.start()
 

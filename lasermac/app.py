@@ -41,9 +41,9 @@ class LaserMacApp(ctk.CTk):
         sidebar.grid_propagate(False)
 
         # Logo
-        ctk.CTkLabel(
-            sidebar, text="🔥 LaserMac", font=("", 22, "bold")
-        ).pack(pady=(15, 5), padx=10, anchor="w")
+        ctk.CTkLabel(sidebar, text="🔥 LaserMac", font=("", 22, "bold")).pack(
+            pady=(15, 5), padx=10, anchor="w"
+        )
         ctk.CTkLabel(
             sidebar, text="GRBL Laser Controller", text_color="#888888", font=("", 12)
         ).pack(padx=10, anchor="w")
@@ -80,32 +80,67 @@ class LaserMacApp(ctk.CTk):
         test_frame.pack(fill="x", padx=10, pady=(2, 10))
 
         ctk.CTkButton(
-            test_frame, text="🔴 Test ON", width=80,
+            test_frame,
+            text="🔴 Test ON",
+            width=80,
             command=self._laser_test_on,
-            fg_color="#da3633", hover_color="#f85149",
+            fg_color="#da3633",
+            hover_color="#f85149",
         ).pack(side="left", padx=2)
 
         ctk.CTkButton(
-            test_frame, text="⚫ OFF", width=60,
+            test_frame,
+            text="⚫ OFF",
+            width=60,
             command=self._laser_off,
-            fg_color="#333333", hover_color="#444444",
+            fg_color="#333333",
+            hover_color="#444444",
         ).pack(side="left", padx=2)
 
-        # Right area: job panel + console
+        # Right area: update banner + tabview + console
         right = ctk.CTkFrame(self, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-        right.grid_rowconfigure(0, weight=2)
-        right.grid_rowconfigure(1, weight=1)
+        right.grid_rowconfigure(1, weight=2)
+        right.grid_rowconfigure(2, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
-        # Job panel (top)
-        JobPanel(right, self.grbl).grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+        # Update banner (hidden by default)
+        self._update_banner = ctk.CTkButton(
+            right,
+            text="",
+            fg_color="#1a5c2a",
+            hover_color="#238636",
+            height=30,
+            command=self._open_update_url,
+        )
+        self._update_url: str | None = None
+
+        # Tabview: Jobs | Draw
+        self.tabview = ctk.CTkTabview(right)
+        self.tabview.grid(row=1, column=0, sticky="nsew", pady=(0, 5))
+        self.tabview.add("Jobs")
+        self.tabview.add("Draw")
+
+        # Job panel in Jobs tab
+        jobs_tab = self.tabview.tab("Jobs")
+        jobs_tab.grid_rowconfigure(0, weight=1)
+        jobs_tab.grid_columnconfigure(0, weight=1)
+        JobPanel(jobs_tab, self.grbl).grid(row=0, column=0, sticky="nsew")
+
+        # Draw canvas in Draw tab
+        draw_tab = self.tabview.tab("Draw")
+        draw_tab.grid_rowconfigure(0, weight=1)
+        draw_tab.grid_columnconfigure(0, weight=1)
+        DrawCanvas(draw_tab, self.grbl).grid(row=0, column=0, sticky="nsew")
 
         # Console (bottom)
-        ConsolePanel(right, self.grbl).grid(row=1, column=0, sticky="nsew")
+        ConsolePanel(right, self.grbl).grid(row=2, column=0, sticky="nsew")
 
         # Cleanup on close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Check for updates in background
+        updater.check_async(self._on_update_result)
 
     def _laser_test_on(self) -> None:
         """Turn laser on at low power for testing."""

@@ -32,9 +32,9 @@ class JobPanel(ctk.CTkFrame):
         header.pack(fill="x", padx=10, pady=(10, 5))
 
         ctk.CTkLabel(header, text="📁 Job", font=("", 16, "bold")).pack(side="left")
-        ctk.CTkButton(
-            header, text="Load File", command=self._load_file, width=100
-        ).pack(side="right")
+        ctk.CTkButton(header, text="Load File", command=self._load_file, width=100).pack(
+            side="right"
+        )
 
         # File info
         self.file_label = ctk.CTkLabel(self, text="No file loaded", text_color="#888888")
@@ -53,12 +53,16 @@ class JobPanel(ctk.CTkFrame):
 
         ctk.CTkLabel(override_frame, text="Speed:").pack(side="left")
         self.speed_var = ctk.StringVar(value="3000")
-        ctk.CTkEntry(override_frame, textvariable=self.speed_var, width=60).pack(side="left", padx=2)
+        ctk.CTkEntry(override_frame, textvariable=self.speed_var, width=60).pack(
+            side="left", padx=2
+        )
         ctk.CTkLabel(override_frame, text="mm/min").pack(side="left", padx=(0, 10))
 
         ctk.CTkLabel(override_frame, text="Power:").pack(side="left")
         self.power_var = ctk.StringVar(value="1000")
-        ctk.CTkEntry(override_frame, textvariable=self.power_var, width=60).pack(side="left", padx=2)
+        ctk.CTkEntry(override_frame, textvariable=self.power_var, width=60).pack(
+            side="left", padx=2
+        )
         ctk.CTkLabel(override_frame, text="S").pack(side="left")
 
         # Progress
@@ -74,26 +78,42 @@ class JobPanel(ctk.CTkFrame):
         btn_frame.pack(fill="x", padx=10, pady=(5, 10))
 
         self.start_btn = ctk.CTkButton(
-            btn_frame, text="▶ Start", command=self._start_job,
-            fg_color="#2ea043", hover_color="#3fb950", width=80,
+            btn_frame,
+            text="▶ Start",
+            command=self._start_job,
+            fg_color="#2ea043",
+            hover_color="#3fb950",
+            width=80,
         )
         self.start_btn.pack(side="left", padx=2)
 
         self.pause_btn = ctk.CTkButton(
-            btn_frame, text="⏸ Pause", command=self._pause_job,
-            fg_color="#d29922", hover_color="#e3b341", width=80,
+            btn_frame,
+            text="⏸ Pause",
+            command=self._pause_job,
+            fg_color="#d29922",
+            hover_color="#e3b341",
+            width=80,
         )
         self.pause_btn.pack(side="left", padx=2)
 
         self.stop_btn = ctk.CTkButton(
-            btn_frame, text="⏹ Stop", command=self._stop_job,
-            fg_color="#da3633", hover_color="#f85149", width=80,
+            btn_frame,
+            text="⏹ Stop",
+            command=self._stop_job,
+            fg_color="#da3633",
+            hover_color="#f85149",
+            width=80,
         )
         self.stop_btn.pack(side="left", padx=2)
 
         ctk.CTkButton(
-            btn_frame, text="🔲 Frame", command=self._run_frame,
-            fg_color="#333333", hover_color="#444444", width=80,
+            btn_frame,
+            text="🔲 Frame",
+            command=self._run_frame,
+            fg_color="#333333",
+            hover_color="#444444",
+            width=80,
         ).pack(side="left", padx=2)
 
         # Register callbacks
@@ -123,13 +143,19 @@ class JobPanel(ctk.CTkFrame):
         ctk.CTkLabel(row2, text="Mode:").pack(side="left")
         self.img_mode_var = ctk.StringVar(value="threshold")
         ctk.CTkOptionMenu(
-            row2, variable=self.img_mode_var,
-            values=["threshold", "floyd", "grayscale"], width=120,
+            row2,
+            variable=self.img_mode_var,
+            values=["threshold", "floyd", "grayscale"],
+            width=120,
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
-            row2, text="Convert", command=self._convert_image, width=80,
-            fg_color="#1a5276", hover_color="#2471a3",
+            row2,
+            text="Convert",
+            command=self._convert_image,
+            width=80,
+            fg_color="#1a5276",
+            hover_color="#2471a3",
         ).pack(side="right")
 
     def _load_file(self) -> None:

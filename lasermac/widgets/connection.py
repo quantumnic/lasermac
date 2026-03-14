@@ -30,9 +30,7 @@ class ConnectionPanel(ctk.CTkFrame):
         )
         self.port_menu.pack(side="left", padx=5)
 
-        self.refresh_btn = ctk.CTkButton(
-            port_frame, text="⟳", width=30, command=self.refresh_ports
-        )
+        self.refresh_btn = ctk.CTkButton(port_frame, text="⟳", width=30, command=self.refresh_ports)
         self.refresh_btn.pack(side="left")
 
         # Baud rate
@@ -50,15 +48,16 @@ class ConnectionPanel(ctk.CTkFrame):
 
         # Connect button
         self.connect_btn = ctk.CTkButton(
-            self, text="Connect", command=self.toggle_connection,
-            fg_color="#2ea043", hover_color="#3fb950",
+            self,
+            text="Connect",
+            command=self.toggle_connection,
+            fg_color="#2ea043",
+            hover_color="#3fb950",
         )
         self.connect_btn.pack(fill="x", padx=10, pady=5)
 
         # Status indicator
-        self.status_label = ctk.CTkLabel(
-            self, text="● Disconnected", text_color="#ff6b6b"
-        )
+        self.status_label = ctk.CTkLabel(self, text="● Disconnected", text_color="#ff6b6b")
         self.status_label.pack(padx=10, pady=(0, 10))
 
         # Register callback
@@ -100,9 +99,10 @@ class ConnectionPanel(ctk.CTkFrame):
             if new != "(none)" and new != old:
                 # New device plugged in — flash the button
                 self.connect_btn.configure(fg_color="#e3b341", hover_color="#d4a017")
-                self.after(1000, lambda: self.connect_btn.configure(
-                    fg_color="#2ea043", hover_color="#3fb950"
-                ))
+                self.after(
+                    1000,
+                    lambda: self.connect_btn.configure(fg_color="#2ea043", hover_color="#3fb950"),
+                )
 
     def toggle_connection(self) -> None:
         """Connect or disconnect."""
@@ -119,12 +119,8 @@ class ConnectionPanel(ctk.CTkFrame):
     def _on_connect_change(self, connected: bool) -> None:
         """Update UI when connection state changes."""
         if connected:
-            self.connect_btn.configure(
-                text="Disconnect", fg_color="#da3633", hover_color="#f85149"
-            )
+            self.connect_btn.configure(text="Disconnect", fg_color="#da3633", hover_color="#f85149")
             self.status_label.configure(text="● Connected", text_color="#3fb950")
         else:
-            self.connect_btn.configure(
-                text="Connect", fg_color="#2ea043", hover_color="#3fb950"
-            )
+            self.connect_btn.configure(text="Connect", fg_color="#2ea043", hover_color="#3fb950")
             self.status_label.configure(text="● Disconnected", text_color="#ff6b6b")

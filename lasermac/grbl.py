@@ -99,6 +99,7 @@ class GrblController:
     def list_ports_detail() -> list[dict]:
         """List serial ports with device info (name, chip, VID/PID)."""
         import serial.tools.list_ports
+
         ports = serial.tools.list_ports.comports()
         result = []
         for p in ports:
@@ -120,14 +121,16 @@ class GrblController:
                 chip = "FTDI"
             elif "esp" in desc.lower() or "esp32" in desc.lower():
                 chip = "ESP32"
-            result.append({
-                "device": dev,
-                "name": name,
-                "description": desc or "Serial Device",
-                "chip": chip,
-                "vid": p.vid,
-                "pid": p.pid,
-            })
+            result.append(
+                {
+                    "device": dev,
+                    "name": name,
+                    "description": desc or "Serial Device",
+                    "chip": chip,
+                    "vid": p.vid,
+                    "pid": p.pid,
+                }
+            )
         return result
 
     def connect(self, port: str, baud: int = 115200) -> bool:
@@ -196,8 +199,23 @@ class GrblController:
         self.send_realtime("\x18")
 
     def jog(self, axis: str, distance: float, feed_rate: int = 1000) -> None:
-        """Send jog command. axis: 'X', 'Y', or 'Z'."""
-        cmd = f"$J=G91 {axis}{distance:.3f} F{feed_rate}"
+        """Send jog command. axis: 'X', 'Y', or 'Z'.
+
+        Totem S / GRBL 1.1 compatible:
+        - G91 = relative mode
+        - Must include all axes or just the one moving
+        - F must be last
+        - No space issues: use explicit format
+        """
+        ax = axis.upper()
+        if ax == "X":
+            cmd = f"$J=G91G21 X{distance:.3f} F{feed_rate}"
+        elif ax == "Y":
+            cmd = f"$J=G91G21 Y{distance:.3f} F{feed_rate}"
+        elif ax == "Z":
+            cmd = f"$J=G91G21 Z{distance:.3f} F{feed_rate}"
+        else:
+            return
         self.send_command(cmd)
 
     def jog_cancel(self) -> None:

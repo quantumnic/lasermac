@@ -34,9 +34,9 @@ class ConsolePanel(ctk.CTkFrame):
         self.cmd_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
         self.cmd_entry.bind("<Return>", self._send_command)
 
-        ctk.CTkButton(
-            input_frame, text="Send", width=60, command=self._send_command
-        ).pack(side="right")
+        ctk.CTkButton(input_frame, text="Send", width=60, command=self._send_command).pack(
+            side="right"
+        )
 
         # Quick commands
         quick_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -50,8 +50,12 @@ class ConsolePanel(ctk.CTkFrame):
         ]
         for text, cmd in buttons:
             ctk.CTkButton(
-                quick_frame, text=text, width=80, command=cmd,
-                fg_color="#333333", hover_color="#444444",
+                quick_frame,
+                text=text,
+                width=80,
+                command=cmd,
+                fg_color="#333333",
+                hover_color="#444444",
             ).pack(side="left", padx=2)
 
         # Register message callback

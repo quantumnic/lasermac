@@ -51,12 +51,16 @@ def parse_gcode_for_preview(gcode_lines: list[str]) -> list[dict]:
 
             move_type = "cut" if (line.startswith("G1") and current_power > 0) else "rapid"
 
-            segments.append({
-                "x0": current_x, "y0": current_y,
-                "x1": new_x, "y1": new_y,
-                "type": move_type,
-                "power": current_power,
-            })
+            segments.append(
+                {
+                    "x0": current_x,
+                    "y0": current_y,
+                    "x1": new_x,
+                    "y1": new_y,
+                    "type": move_type,
+                    "power": current_power,
+                }
+            )
 
             current_x = new_x
             current_y = new_y
@@ -104,7 +108,9 @@ class PreviewCanvas:
             self.ax.plot(
                 [seg["x0"], seg["x1"]],
                 [seg["y0"], seg["y1"]],
-                color=color, alpha=alpha, linewidth=lw,
+                color=color,
+                alpha=alpha,
+                linewidth=lw,
             )
 
         self.ax.grid(True, color="#333333", alpha=0.5)
