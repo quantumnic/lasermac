@@ -161,14 +161,14 @@ class GrblController:
         s = self.read_settings()
         dir_invert = int(s.get(3, 0))  # $3 bitmask: bit0=X, bit1=Y
         return {
-            "work_x":    s.get(130, 300.0),
-            "work_y":    s.get(131, 300.0),
-            "invert_x":  bool(dir_invert & 1),
-            "invert_y":  bool(dir_invert & 2),
+            "work_x": s.get(130, 300.0),
+            "work_y": s.get(131, 300.0),
+            "invert_x": bool(dir_invert & 1),
+            "invert_y": bool(dir_invert & 2),
             "max_power": int(s.get(30, 1000)),
             "max_speed": s.get(110, 6000.0),
-            "steps_x":   s.get(100, 80.0),
-            "steps_y":   s.get(101, 80.0),
+            "steps_x": s.get(100, 80.0),
+            "steps_y": s.get(101, 80.0),
             "laser_mode": bool(s.get(32, 0)),
             "raw": s,
         }

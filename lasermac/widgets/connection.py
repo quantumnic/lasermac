@@ -146,6 +146,4 @@ class ConnectionPanel(ctk.CTkFrame):
             if hasattr(self, "on_machine_detected") and self.on_machine_detected:
                 self.on_machine_detected(cfg)
         except Exception:
-            self.status_label.configure(
-                text="● Connected (detect failed)", text_color="#e3b341"
-            )
+            self.status_label.configure(text="● Connected (detect failed)", text_color="#e3b341")

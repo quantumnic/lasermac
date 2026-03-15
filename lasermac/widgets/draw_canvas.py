@@ -145,6 +145,35 @@ class DrawCanvas(ctk.CTkFrame):
         self.power_slider.pack(side="left", padx=5)
         self.power_slider.set(500)
 
+        # Fill Speed (for hatch)
+        fsf = ctk.CTkFrame(bottom, fg_color="transparent")
+        fsf.pack(side="left", padx=10, pady=5)
+        ctk.CTkLabel(fsf, text="Fill Speed:").pack(side="left")
+        self.fill_speed_slider = ctk.CTkSlider(
+            fsf, from_=100, to=10000, number_of_steps=100, width=100
+        )
+        self.fill_speed_slider.pack(side="left", padx=5)
+        self.fill_speed_slider.set(1500)
+
+        # Fill Power (for hatch)
+        fpf = ctk.CTkFrame(bottom, fg_color="transparent")
+        fpf.pack(side="left", padx=10, pady=5)
+        ctk.CTkLabel(fpf, text="Fill Power:").pack(side="left")
+        self.fill_power_slider = ctk.CTkSlider(
+            fpf, from_=0, to=1000, number_of_steps=100, width=100
+        )
+        self.fill_power_slider.pack(side="left", padx=5)
+        self.fill_power_slider.set(600)
+
+        # Hatch mode
+        hf = ctk.CTkFrame(bottom, fg_color="transparent")
+        hf.pack(side="left", padx=5, pady=5)
+        ctk.CTkLabel(hf, text="Fill:").pack(side="left")
+        self.hatch_var = ctk.StringVar(value="none")
+        ctk.CTkOptionMenu(
+            hf, variable=self.hatch_var, values=["none", "lines", "schraffur", "kreuz"], width=100
+        ).pack(side="left", padx=3)
+
         # Action buttons
         ctk.CTkButton(
             bottom,
@@ -440,8 +469,13 @@ class DrawCanvas(ctk.CTkFrame):
 
     # ── G-code generation ───────────────────────────────────────────
 
-    def to_gcode(self, speed: int = 1000, power: int = 500) -> str:
-        """Convert all drawn elements to G-code."""
+    def to_gcode(
+        self, speed: int = 1000, power: int = 500, fill_speed: int = 1500, fill_power: int = 600
+    ) -> str:
+        """Convert all drawn elements to G-code.
+
+        fill_speed/fill_power: used for hatch fills (faster + less power = lighter grey)
+        """
         lines = [
             "G21         ; mm mode",
             "G90         ; absolute",
@@ -451,7 +485,7 @@ class DrawCanvas(ctk.CTkFrame):
         ]
 
         for elem in self.elements:
-            gc = self._element_to_gcode(elem, speed, power)
+            gc = self._element_to_gcode(elem, speed, power, fill_speed, fill_power)
             if gc:
                 lines.append(gc)
 
@@ -460,18 +494,31 @@ class DrawCanvas(ctk.CTkFrame):
         lines.append("M2          ; end")
         return "\n".join(lines)
 
-    def _element_to_gcode(self, elem: DrawElement, speed: int, power: int) -> str:
+    def _element_to_gcode(
+        self,
+        elem: DrawElement,
+        speed: int,
+        power: int,
+        fill_speed: int = 1500,
+        fill_power: int = 600,
+    ) -> str:
         if elem.kind == "pen":
             return self._draw_stroke(elem.points, speed, power)
         elif elem.kind == "line" and len(elem.points) == 2:
             return self._draw_line_gcode(*elem.points[0], *elem.points[1], speed, power)
         elif elem.kind == "rect" and len(elem.points) == 2:
-            return self._draw_rect(*elem.points[0], *elem.points[1], speed, power)
+            return self._draw_rect(
+                *elem.points[0],
+                *elem.points[1],
+                speed,
+                power,
+                fill_speed=fill_speed,
+                fill_power=fill_power,
+            )
         elif elem.kind == "circle" and len(elem.points) == 2:
             cx, cy = elem.points[0]
             ex, ey = elem.points[1]
             r_px = math.hypot(ex - cx, ey - cy)
-            # Convert radius to mm
             canvas_size = self.CANVAS_PX * self.zoom_level
             r_mm = r_px / canvas_size * self.work_w_mm
             mx, my = self.px_to_mm(cx, cy)
@@ -492,22 +539,139 @@ class DrawCanvas(ctk.CTkFrame):
         lines.append("M5")
         return "\n".join(lines)
 
-    def _draw_rect(self, x1: float, y1: float, x2: float, y2: float, speed: int, power: int) -> str:
-        """Convert a rectangle (in px) to G-code."""
+    def _draw_rect(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        speed: int,
+        power: int,
+        fill_speed: int = 1500,
+        fill_power: int = 600,
+        hatch: str = "none",
+        hatch_spacing: float = 0.8,
+    ) -> str:
+        """Convert a rectangle (in px) to G-code.
+
+        hatch: 'none' | 'lines' | 'schraffur' (45°) | 'kreuz' (cross-hatch)
+        fill_speed/fill_power: faster + less power for fill = lighter grey tone
+        """
         p1 = self.px_to_mm(x1, y1)
         p2 = self.px_to_mm(x2, y1)
         p3 = self.px_to_mm(x2, y2)
         p4 = self.px_to_mm(x1, y2)
+        # Outline
         lines = [
             f"G0 X{p1[0]} Y{p1[1]}",
             f"M3 S{power}",
-            f"G1 X{p2[0]} Y{p2[1]}",
-            f"G1 X{p3[0]} Y{p3[1]}",
-            f"G1 X{p4[0]} Y{p4[1]}",
-            f"G1 X{p1[0]} Y{p1[1]}",
+            f"G1 X{p2[0]} Y{p2[1]} F{speed}",
+            f"G1 X{p3[0]} Y{p3[1]} F{speed}",
+            f"G1 X{p4[0]} Y{p4[1]} F{speed}",
+            f"G1 X{p1[0]} Y{p1[1]} F{speed}",
             "M5",
         ]
+        # Hatch fill
+        rx1, ry1 = min(p1[0], p3[0]), min(p1[1], p3[1])
+        rx2, ry2 = max(p1[0], p3[0]), max(p1[1], p3[1])
+        if hatch in ("lines", "schraffur", "kreuz"):
+            lines.append(f"; hatch fill ({hatch}) F{fill_speed} S{fill_power}")
+            lines += self._hatch_gcode(
+                rx1, ry1, rx2, ry2, mode=hatch, sp=hatch_spacing, speed=fill_speed, power=fill_power
+            )
         return "\n".join(lines)
+
+    def _hatch_gcode(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        mode: str = "schraffur",
+        sp: float = 0.8,
+        speed: int = 1500,
+        power: int = 600,
+    ) -> list[str]:
+        """Generate hatch fill G-code lines. Fast + lower power = grey tone."""
+        gc: list[str] = []
+        w, h = x2 - x1, y2 - y1
+
+        def seg(ax, ay, bx, by):
+            gc.append(f"G0 X{round(ax, 3)} Y{round(ay, 3)}")
+            gc.append(f"M3 S{power}")
+            gc.append(f"G1 X{round(bx, 3)} Y{round(by, 3)} F{speed}")
+            gc.append("M5")
+
+        if mode == "lines":
+            y = y1 + sp
+            tog = False
+            while y < y2 - 0.1:
+                if tog:
+                    seg(x1 + 0.1, y, x2 - 0.1, y)
+                else:
+                    seg(x2 - 0.1, y, x1 + 0.1, y)
+                y += sp
+                tog = not tog
+
+        elif mode in ("schraffur", "kreuz"):
+            # 45° diagonals
+            d = -h
+            tog = False
+            while d < w:
+                sx = x1
+                sy = y1 - d if d < 0 else y1
+                if d < 0 and y1 - d > y2:
+                    sy = y2
+                    sx = x1 + (y2 - y1 + d)
+                elif d >= 0:
+                    sx = x1 + d
+                ex = sx + h
+                ey = sy + h
+                if ex > x2:
+                    ey = sy + (x2 - sx)
+                    ex = x2
+                if ey > y2:
+                    ex = sx + (y2 - sy)
+                    ey = y2
+                ex = min(ex, x2)
+                ey = min(ey, y2)
+                sx = max(sx, x1)
+                sy = max(sy, y1)
+                if abs(ex - sx) > 0.2 or abs(ey - sy) > 0.2:
+                    if tog:
+                        seg(sx, sy, ex, ey)
+                    else:
+                        seg(ex, ey, sx, sy)
+                d += sp
+                tog = not tog
+
+            if mode == "kreuz":
+                # 135° diagonals
+                d = 0
+                tog = False
+                while d < w + h:
+                    if d < w:
+                        sx, sy = x2 - d, y1
+                    else:
+                        sx, sy = x1, y1 + (d - w)
+                    ex, ey = sx - h, sy + h
+                    if ex < x1:
+                        ey = sy + (sx - x1)
+                        ex = x1
+                    if ey > y2:
+                        ex = sx - (y2 - sy)
+                        ey = y2
+                    ex = max(ex, x1)
+                    ey = min(ey, y2)
+                    sx = min(sx, x2)
+                    if abs(ex - sx) > 0.2 or abs(ey - sy) > 0.2:
+                        if tog:
+                            seg(sx, sy, ex, ey)
+                        else:
+                            seg(ex, ey, sx, sy)
+                    d += sp
+                    tog = not tog
+        return gc
 
     def _draw_circle(
         self, cx: float, cy: float, r: float, speed: int, power: int, segments: int = 36
@@ -545,9 +709,16 @@ class DrawCanvas(ctk.CTkFrame):
 
     # ── Export ──────────────────────────────────────────────────────
 
-    def burn(self, speed: int = 1000, power: int = 500) -> None:
+    def burn(
+        self,
+        speed: int = 1000,
+        power: int = 500,
+        fill_speed: int = 1500,
+        fill_power: int = 600,
+        hatch: str = "none",
+    ) -> None:
         """Convert drawing to G-code and send to GRBL."""
-        gcode = self.to_gcode(speed, power)
+        gcode = self.to_gcode(speed, power, fill_speed=fill_speed, fill_power=fill_power)
         for line in gcode.split("\n"):
             line = line.split(";")[0].strip()
             if line:
@@ -604,7 +775,10 @@ class DrawCanvas(ctk.CTkFrame):
     def _burn_click(self) -> None:
         speed = int(self.speed_slider.get())
         power = int(self.power_slider.get())
-        self.burn(speed, power)
+        fill_speed = int(self.fill_speed_slider.get())
+        fill_power = int(self.fill_power_slider.get())
+        hatch = self.hatch_var.get()
+        self.burn(speed, power, fill_speed=fill_speed, fill_power=fill_power, hatch=hatch)
 
     def _save_gcode_click(self) -> None:
         path = filedialog.asksaveasfilename(
