@@ -291,7 +291,7 @@ class DrawCanvas(ctk.CTkFrame):
         defaults = default_settings(op)
         max_speed = 10000 if op != OPERATION_CUT else 2000
         self.speed_slider = ctk.CTkSlider(
-            sf, from_=50, to=max_speed, number_of_steps=100, width=100
+            sf, from_=50, to=max_speed, number_of_steps=100, width=160, height=20
         )
         self.speed_slider.pack(side="left", padx=3)
         self.speed_slider.set(defaults.speed)
@@ -300,7 +300,7 @@ class DrawCanvas(ctk.CTkFrame):
         pf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
         pf.pack(side="left", padx=5)
         ctk.CTkLabel(pf, text="Power:").pack(side="left")
-        self.power_slider = ctk.CTkSlider(pf, from_=0, to=1000, number_of_steps=100, width=100)
+        self.power_slider = ctk.CTkSlider(pf, from_=0, to=1000, number_of_steps=100, width=160, height=20)
         self.power_slider.pack(side="left", padx=3)
         self.power_slider.set(defaults.power)
 
@@ -348,7 +348,7 @@ class DrawCanvas(ctk.CTkFrame):
             fsf.pack(side="left", padx=5)
             ctk.CTkLabel(fsf, text="F.Spd:").pack(side="left")
             self.fill_speed_slider = ctk.CTkSlider(
-                fsf, from_=100, to=10000, number_of_steps=100, width=80
+                fsf, from_=100, to=10000, number_of_steps=100, width=130, height=20
             )
             self.fill_speed_slider.pack(side="left", padx=3)
             self.fill_speed_slider.set(defaults.fill_speed)
@@ -358,7 +358,7 @@ class DrawCanvas(ctk.CTkFrame):
             fpf.pack(side="left", padx=5)
             ctk.CTkLabel(fpf, text="F.Pwr:").pack(side="left")
             self.fill_power_slider = ctk.CTkSlider(
-                fpf, from_=0, to=1000, number_of_steps=100, width=80
+                fpf, from_=0, to=1000, number_of_steps=100, width=130, height=20
             )
             self.fill_power_slider.pack(side="left", padx=3)
             self.fill_power_slider.set(defaults.fill_power)

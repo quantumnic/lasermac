@@ -199,7 +199,7 @@ class LabeledSlider(ctk.CTkFrame):
             text=label,
             text_color=COLORS["text_secondary"],
             font=FONTS["label"],
-            width=50,
+            width=65,
             anchor="w",
         ).grid(row=0, column=0, padx=(0, 4), sticky="w")
 
@@ -208,12 +208,15 @@ class LabeledSlider(ctk.CTkFrame):
             from_=from_,
             to=to,
             number_of_steps=number_of_steps,
+            height=20,            # taller = easier to grab
+            button_length=16,     # bigger handle
             button_color=COLORS["accent"],
             button_hover_color=COLORS["accent_hover"],
             progress_color=COLORS["accent"],
+            fg_color=COLORS["bg_elevated"],
             command=self._on_change,
         )
-        self.slider.grid(row=0, column=1, sticky="ew", padx=4)
+        self.slider.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=4)
         self.slider.set(value)
 
         self._value_label = ctk.CTkLabel(
@@ -221,7 +224,7 @@ class LabeledSlider(ctk.CTkFrame):
             text=self._format(value),
             text_color=COLORS["text_primary"],
             font=FONTS["mono_small"],
-            width=60,
+            width=70,            # wider for values like "10000"
             anchor="e",
         )
         self._value_label.grid(row=0, column=2, padx=(4, 0), sticky="e")
