@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lasermac"
-version = "0.4.2"
+version = "0.4.3"
 description = "Free macOS laser engraver controller for GRBL machines"
 readme = "README.md"
 license = {text = "MIT"}
@@ -23,6 +23,7 @@ dependencies = [
     "numpy>=1.26",
     "matplotlib>=3.8",
     "svgpathtools>=1.6",
+    "click>=8.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ dev = ["pytest>=8.0", "ruff>=0.8.0"]
 
 [project.scripts]
 lasermac = "lasermac.app:main"
+lasermac-cli = "lasermac.cli_main:cli"
 
 [tool.ruff]
 target-version = "py311"
