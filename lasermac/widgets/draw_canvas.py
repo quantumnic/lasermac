@@ -1,4 +1,15 @@
-"""Direct drawing canvas — draw shapes and send to laser."""
+"""Direct drawing canvas — draw shapes and send to laser.
+
+Central concept: every shape has an operation type (cut / engrave / mark)
+that determines its color on canvas, its G-code settings, and export order.
+
+Colors:
+    CUT     = Red (#FF3333)   — thick line, outline only
+    ENGRAVE = Blue (#3399FF)  — normal line, supports fill
+    MARK    = Green (#33CC33) — thin line, surface only
+
+G-code export order: Mark → Engrave → Cut (cut always last!)
+"""
 
 from __future__ import annotations
 
@@ -10,25 +21,68 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from lasermac.layers import (
+    OPERATION_CUT,
+    OPERATION_ENGRAVE,
+    OPERATION_MARK,
+    OPERATIONS,
+    OperationSettings,
+    default_settings,
+    gcode_sort_key,
+    operation_color,
+    operation_label,
+    operation_line_width,
+)
+
 if TYPE_CHECKING:
     from lasermac.grbl import GrblController
 
 
 @dataclass
 class DrawElement:
-    """A single drawn element on the canvas."""
+    """A single drawn element on the canvas.
 
-    kind: str  # pen, line, rect, circle
+    Each element has its own operation type and settings — this is the
+    core design: you see red = cut, blue = engrave, green = mark at a glance.
+    """
+
+    kind: str  # pen, line, rect, circle, ellipse, polygon
     points: list[tuple[float, float]] = field(default_factory=list)
     canvas_ids: list[int] = field(default_factory=list)
+    settings: OperationSettings = field(default_factory=lambda: default_settings(OPERATION_ENGRAVE))
+
+    @property
+    def operation(self) -> str:
+        return self.settings.operation
+
+    @operation.setter
+    def operation(self, value: str) -> None:
+        if value != self.settings.operation:
+            self.settings = default_settings(value)
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "points": self.points,
+            "settings": self.settings.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> DrawElement:
+        settings = OperationSettings.from_dict(d.get("settings", {}))
+        return cls(kind=d["kind"], points=d.get("points", []), settings=settings)
 
 
 class DrawCanvas(ctk.CTkFrame):
-    """Drawing canvas with tools for creating laser-ready artwork."""
+    """Drawing canvas with operation-aware tools.
 
-    TOOLS = ("pen", "line", "rect", "circle", "eraser", "select")
+    The active operation (cut/engrave/mark) determines what color new shapes
+    are drawn in and what G-code settings they get. This is THE central UX.
+    """
+
+    TOOLS = ("select", "pen", "line", "rect", "circle", "eraser")
     CANVAS_PX = 400
-    DEFAULT_WORK_MM = 400.0  # Totem S default
+    DEFAULT_WORK_MM = 400.0
 
     def __init__(self, parent: ctk.CTkFrame, grbl: GrblController, **kwargs) -> None:
         super().__init__(parent, **kwargs)
@@ -40,6 +94,7 @@ class DrawCanvas(ctk.CTkFrame):
 
         # State
         self.current_tool = "pen"
+        self.current_operation = OPERATION_ENGRAVE
         self.elements: list[DrawElement] = []
         self.redo_stack: list[DrawElement] = []
         self._current_element: DrawElement | None = None
@@ -49,6 +104,7 @@ class DrawCanvas(ctk.CTkFrame):
         self._select_offset: tuple[float, float] = (0, 0)
         self.show_grid = True
         self.zoom_level = 1.0
+        self.snap_grid = 0.0  # 0 = off, else snap in mm
 
         self._build_ui()
 
@@ -58,17 +114,17 @@ class DrawCanvas(ctk.CTkFrame):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # ── Toolbar ──
+        # ── Toolbar row 1: tools + undo/redo ──
         toolbar = ctk.CTkFrame(self)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 2))
 
         tool_icons = {
+            "select": "🔲",
             "pen": "✏️",
             "line": "─",
             "rect": "□",
             "circle": "○",
             "eraser": "🗑️",
-            "select": "🔲",
         }
         self._tool_buttons: dict[str, ctk.CTkButton] = {}
         for t in self.TOOLS:
@@ -82,7 +138,29 @@ class DrawCanvas(ctk.CTkFrame):
             self._tool_buttons[t] = btn
 
         # Separator
-        ctk.CTkLabel(toolbar, text="|", width=10).pack(side="left", padx=4)
+        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
+
+        # ── OPERATION BUTTONS — the central UX element ──
+        self._op_buttons: dict[str, ctk.CTkButton] = {}
+        op_configs = {
+            OPERATION_CUT: ("✂️ Cut", "#FF3333", "#CC2222"),
+            OPERATION_ENGRAVE: ("✏️ Engrave", "#3399FF", "#2277DD"),
+            OPERATION_MARK: ("🖊️ Mark", "#33CC33", "#22AA22"),
+        }
+        for op, (label, color, hover) in op_configs.items():
+            btn = ctk.CTkButton(
+                toolbar,
+                text=label,
+                width=90,
+                fg_color=color if op == self.current_operation else "#333333",
+                hover_color=hover,
+                command=lambda o=op: self.set_operation(o),
+            )
+            btn.pack(side="left", padx=2)
+            self._op_buttons[op] = btn
+
+        # Separator
+        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
 
         ctk.CTkButton(toolbar, text="↩️", width=40, command=self.undo).pack(side="left", padx=2)
         ctk.CTkButton(toolbar, text="↪️", width=40, command=self.redo).pack(side="left", padx=2)
@@ -90,7 +168,7 @@ class DrawCanvas(ctk.CTkFrame):
             side="left", padx=2
         )
 
-        ctk.CTkLabel(toolbar, text="|", width=10).pack(side="left", padx=4)
+        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
 
         self._grid_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(toolbar, text="Grid", variable=self._grid_var, command=self._redraw).pack(
@@ -125,74 +203,186 @@ class DrawCanvas(ctk.CTkFrame):
         self.bind_all("<Control-z>", lambda e: self.undo())
         self.bind_all("<Control-y>", lambda e: self.redo())
 
-        # ── Bottom panel: speed/power + actions ──
+        # ── Layer legend (bottom of canvas) ──
+        legend_frame = ctk.CTkFrame(self, fg_color="transparent", height=25)
+        legend_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10)
+        self._legend_labels: dict[str, ctk.CTkLabel] = {}
+        for op in OPERATIONS:
+            color = operation_color(op)
+            lbl = ctk.CTkLabel(
+                legend_frame,
+                text=f"● {op.upper()} (0)",
+                text_color=color,
+                font=("", 11),
+            )
+            lbl.pack(side="left", padx=10)
+            self._legend_labels[op] = lbl
+
+        # ── Bottom panel: operation settings + actions ──
         bottom = ctk.CTkFrame(self)
-        bottom.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=(2, 5))
+        bottom.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=(2, 5))
 
-        # Speed
-        sf = ctk.CTkFrame(bottom, fg_color="transparent")
-        sf.pack(side="left", padx=10, pady=5)
-        ctk.CTkLabel(sf, text="Speed (mm/min):").pack(side="left")
-        self.speed_slider = ctk.CTkSlider(sf, from_=100, to=10000, number_of_steps=100, width=120)
-        self.speed_slider.pack(side="left", padx=5)
-        self.speed_slider.set(1000)
+        # Operation settings (dynamic)
+        self._settings_frame = ctk.CTkFrame(bottom, fg_color="transparent")
+        self._settings_frame.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        self._build_settings_panel()
 
-        # Power
-        pf = ctk.CTkFrame(bottom, fg_color="transparent")
-        pf.pack(side="left", padx=10, pady=5)
-        ctk.CTkLabel(pf, text="Power (S):").pack(side="left")
-        self.power_slider = ctk.CTkSlider(pf, from_=0, to=1000, number_of_steps=100, width=120)
-        self.power_slider.pack(side="left", padx=5)
-        self.power_slider.set(500)
+        # Action buttons (right side)
+        actions = ctk.CTkFrame(bottom, fg_color="transparent")
+        actions.pack(side="right", padx=5, pady=5)
 
-        # Fill Speed (for hatch)
-        fsf = ctk.CTkFrame(bottom, fg_color="transparent")
-        fsf.pack(side="left", padx=10, pady=5)
-        ctk.CTkLabel(fsf, text="Fill Speed:").pack(side="left")
-        self.fill_speed_slider = ctk.CTkSlider(
-            fsf, from_=100, to=10000, number_of_steps=100, width=100
-        )
-        self.fill_speed_slider.pack(side="left", padx=5)
-        self.fill_speed_slider.set(1500)
-
-        # Fill Power (for hatch)
-        fpf = ctk.CTkFrame(bottom, fg_color="transparent")
-        fpf.pack(side="left", padx=10, pady=5)
-        ctk.CTkLabel(fpf, text="Fill Power:").pack(side="left")
-        self.fill_power_slider = ctk.CTkSlider(
-            fpf, from_=0, to=1000, number_of_steps=100, width=100
-        )
-        self.fill_power_slider.pack(side="left", padx=5)
-        self.fill_power_slider.set(600)
-
-        # Hatch mode
-        hf = ctk.CTkFrame(bottom, fg_color="transparent")
-        hf.pack(side="left", padx=5, pady=5)
-        ctk.CTkLabel(hf, text="Fill:").pack(side="left")
-        self.hatch_var = ctk.StringVar(value="none")
-        ctk.CTkOptionMenu(
-            hf, variable=self.hatch_var, values=["none", "lines", "schraffur", "kreuz"], width=100
-        ).pack(side="left", padx=3)
-
-        # Action buttons
         ctk.CTkButton(
-            bottom,
+            actions,
             text="🔥 Burn This!",
             fg_color="#da3633",
             hover_color="#f85149",
             command=self._burn_click,
-        ).pack(side="right", padx=5, pady=5)
+        ).pack(side="right", padx=5)
 
-        ctk.CTkButton(bottom, text="💾 G-code", command=self._save_gcode_click).pack(
-            side="right", padx=2, pady=5
+        ctk.CTkButton(actions, text="💾 G-code", command=self._save_gcode_click).pack(
+            side="right", padx=2
         )
-        ctk.CTkButton(bottom, text="💾 SVG", command=self._save_svg_click).pack(
-            side="right", padx=2, pady=5
+        ctk.CTkButton(actions, text="💾 SVG", command=self._save_svg_click).pack(
+            side="right", padx=2
         )
 
         # Initial draw
         self._draw_grid()
         self._highlight_tool()
+        self._highlight_operation()
+
+    def _build_settings_panel(self) -> None:
+        """Build the operation settings panel based on current operation."""
+        for w in self._settings_frame.winfo_children():
+            w.destroy()
+
+        op = self.current_operation
+        color = operation_color(op)
+        label = operation_label(op)
+
+        ctk.CTkLabel(
+            self._settings_frame,
+            text=label + " Settings",
+            font=("", 13, "bold"),
+            text_color=color,
+        ).pack(side="left", padx=(0, 10))
+
+        # Speed
+        sf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+        sf.pack(side="left", padx=5)
+        ctk.CTkLabel(sf, text="Speed:").pack(side="left")
+        defaults = default_settings(op)
+        max_speed = 10000 if op != OPERATION_CUT else 2000
+        self.speed_slider = ctk.CTkSlider(
+            sf, from_=50, to=max_speed, number_of_steps=100, width=100
+        )
+        self.speed_slider.pack(side="left", padx=3)
+        self.speed_slider.set(defaults.speed)
+
+        # Power
+        pf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+        pf.pack(side="left", padx=5)
+        ctk.CTkLabel(pf, text="Power:").pack(side="left")
+        self.power_slider = ctk.CTkSlider(pf, from_=0, to=1000, number_of_steps=100, width=100)
+        self.power_slider.pack(side="left", padx=3)
+        self.power_slider.set(defaults.power)
+
+        if op == OPERATION_CUT:
+            # Passes selector
+            paf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+            paf.pack(side="left", padx=5)
+            ctk.CTkLabel(paf, text="Passes:").pack(side="left")
+            self.passes_var = ctk.StringVar(value=str(defaults.passes))
+            ctk.CTkOptionMenu(
+                paf,
+                variable=self.passes_var,
+                values=["1", "2", "3", "4", "5", "6", "8", "10"],
+                width=60,
+            ).pack(side="left", padx=3)
+
+            # Warning: no fill for cut
+            ctk.CTkLabel(
+                self._settings_frame,
+                text="⚠️ Fill disabled for CUT",
+                text_color="#FF6633",
+                font=("", 11),
+            ).pack(side="left", padx=10)
+
+            # No fill sliders
+            self.fill_speed_slider = None
+            self.fill_power_slider = None
+            self.hatch_var = ctk.StringVar(value="none")
+
+        elif op == OPERATION_ENGRAVE:
+            # Fill mode
+            hf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+            hf.pack(side="left", padx=5)
+            ctk.CTkLabel(hf, text="Fill:").pack(side="left")
+            self.hatch_var = ctk.StringVar(value=defaults.fill_mode)
+            ctk.CTkOptionMenu(
+                hf,
+                variable=self.hatch_var,
+                values=["none", "lines", "schraffur", "kreuz", "dots", "concentric"],
+                width=100,
+            ).pack(side="left", padx=3)
+
+            # Fill speed
+            fsf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+            fsf.pack(side="left", padx=5)
+            ctk.CTkLabel(fsf, text="F.Spd:").pack(side="left")
+            self.fill_speed_slider = ctk.CTkSlider(
+                fsf, from_=100, to=10000, number_of_steps=100, width=80
+            )
+            self.fill_speed_slider.pack(side="left", padx=3)
+            self.fill_speed_slider.set(defaults.fill_speed)
+
+            # Fill power
+            fpf = ctk.CTkFrame(self._settings_frame, fg_color="transparent")
+            fpf.pack(side="left", padx=5)
+            ctk.CTkLabel(fpf, text="F.Pwr:").pack(side="left")
+            self.fill_power_slider = ctk.CTkSlider(
+                fpf, from_=0, to=1000, number_of_steps=100, width=80
+            )
+            self.fill_power_slider.pack(side="left", padx=3)
+            self.fill_power_slider.set(defaults.fill_power)
+
+            self.passes_var = ctk.StringVar(value="1")
+
+        else:  # MARK
+            self.fill_speed_slider = None
+            self.fill_power_slider = None
+            self.hatch_var = ctk.StringVar(value="none")
+            self.passes_var = ctk.StringVar(value="1")
+
+    # ── Operation selection ─────────────────────────────────────────
+
+    def set_operation(self, operation: str) -> None:
+        """Set the active operation — new shapes will use this."""
+        if operation in OPERATIONS:
+            self.current_operation = operation
+            self._highlight_operation()
+            self._build_settings_panel()
+
+    def _highlight_operation(self) -> None:
+        """Highlight the active operation button."""
+        op_colors = {
+            OPERATION_CUT: "#FF3333",
+            OPERATION_ENGRAVE: "#3399FF",
+            OPERATION_MARK: "#33CC33",
+        }
+        for op, btn in self._op_buttons.items():
+            if op == self.current_operation:
+                btn.configure(fg_color=op_colors[op])
+            else:
+                btn.configure(fg_color="#333333")
+
+    def _update_legend(self) -> None:
+        """Update the layer legend counts."""
+        counts: dict[str, int] = {op: 0 for op in OPERATIONS}
+        for elem in self.elements:
+            counts[elem.operation] = counts.get(elem.operation, 0) + 1
+        for op, lbl in self._legend_labels.items():
+            lbl.configure(text=f"● {op.upper()} ({counts.get(op, 0)})")
 
     # ── Tool selection ──────────────────────────────────────────────
 
@@ -257,11 +447,13 @@ class DrawCanvas(ctk.CTkFrame):
             return
 
         self._drag_start = (x, y)
+        settings = self._current_settings()
+
         if tool == "pen":
-            elem = DrawElement(kind="pen", points=[(x, y)])
+            elem = DrawElement(kind="pen", points=[(x, y)], settings=settings)
             self._current_element = elem
         elif tool in ("line", "rect", "circle"):
-            self._current_element = DrawElement(kind=tool, points=[(x, y)])
+            self._current_element = DrawElement(kind=tool, points=[(x, y)], settings=settings)
 
     def on_mouse_move(self, event: tk.Event) -> None:
         x, y = float(event.x), float(event.y)
@@ -278,10 +470,13 @@ class DrawCanvas(ctk.CTkFrame):
         if self._current_element is None:
             return
 
+        color = operation_color(self.current_operation)
+        lw = operation_line_width(self.current_operation)
+
         if tool == "pen":
             last = self._current_element.points[-1]
             cid = self.canvas.create_line(
-                last[0], last[1], x, y, fill="#00ff88", width=2, tags="drawing"
+                last[0], last[1], x, y, fill=color, width=lw, tags="drawing"
             )
             self._current_element.points.append((x, y))
             self._current_element.canvas_ids.append(cid)
@@ -291,23 +486,17 @@ class DrawCanvas(ctk.CTkFrame):
             sx, sy = self._drag_start  # type: ignore[misc]
             if tool == "line":
                 self._preview_id = self.canvas.create_line(
-                    sx, sy, x, y, fill="#00ff88", width=2, dash=(4, 4), tags="preview"
+                    sx, sy, x, y, fill=color, width=lw, dash=(4, 4), tags="preview"
                 )
             elif tool == "rect":
                 self._preview_id = self.canvas.create_rectangle(
-                    sx, sy, x, y, outline="#00ff88", width=2, dash=(4, 4), tags="preview"
+                    sx, sy, x, y, outline=color, width=lw, dash=(4, 4), tags="preview"
                 )
             elif tool == "circle":
                 r = math.hypot(x - sx, y - sy)
                 self._preview_id = self.canvas.create_oval(
-                    sx - r,
-                    sy - r,
-                    sx + r,
-                    sy + r,
-                    outline="#00ff88",
-                    width=2,
-                    dash=(4, 4),
-                    tags="preview",
+                    sx - r, sy - r, sx + r, sy + r,
+                    outline=color, width=lw, dash=(4, 4), tags="preview",
                 )
 
     def on_mouse_up(self, event: tk.Event) -> None:
@@ -340,7 +529,6 @@ class DrawCanvas(ctk.CTkFrame):
                 return
             sx, sy = elem.points[0]
             elem.points = [(sx, sy), (x, y)]
-            # Draw final shape
             for cid in elem.canvas_ids:
                 self.canvas.delete(cid)
             elem.canvas_ids.clear()
@@ -349,6 +537,28 @@ class DrawCanvas(ctk.CTkFrame):
 
         self.elements.append(elem)
         self.redo_stack.clear()
+        self._update_legend()
+
+    def _current_settings(self) -> OperationSettings:
+        """Build OperationSettings from current UI sliders."""
+        op = self.current_operation
+        settings = default_settings(op)
+        settings.speed = int(self.speed_slider.get())
+        settings.power = int(self.power_slider.get())
+        settings.passes = int(self.passes_var.get()) if hasattr(self, "passes_var") else 1
+
+        if op == OPERATION_CUT:
+            settings.fill_mode = "none"  # CUT never fills
+        elif op == OPERATION_ENGRAVE:
+            settings.fill_mode = self.hatch_var.get() if hasattr(self, "hatch_var") else "none"
+            if self.fill_speed_slider:
+                settings.fill_speed = int(self.fill_speed_slider.get())
+            if self.fill_power_slider:
+                settings.fill_power = int(self.fill_power_slider.get())
+        else:
+            settings.fill_mode = "none"
+
+        return settings
 
     # ── Select / move ───────────────────────────────────────────────
 
@@ -386,32 +596,33 @@ class DrawCanvas(ctk.CTkFrame):
                 for cid in elem.canvas_ids:
                     self.canvas.delete(cid)
                 self.elements.pop(idx)
+                self._update_legend()
                 return
 
     # ── Render helpers ──────────────────────────────────────────────
 
     def _render_element(self, elem: DrawElement) -> list[int]:
+        """Render an element on canvas using its operation color."""
         ids: list[int] = []
+        color = operation_color(elem.operation)
+        lw = operation_line_width(elem.operation)
+
         if elem.kind == "pen" and len(elem.points) >= 2:
             for i in range(len(elem.points) - 1):
                 cid = self.canvas.create_line(
-                    elem.points[i][0],
-                    elem.points[i][1],
-                    elem.points[i + 1][0],
-                    elem.points[i + 1][1],
-                    fill="#00ff88",
-                    width=2,
-                    tags="drawing",
+                    elem.points[i][0], elem.points[i][1],
+                    elem.points[i + 1][0], elem.points[i + 1][1],
+                    fill=color, width=lw, tags="drawing",
                 )
                 ids.append(cid)
         elif elem.kind == "line" and len(elem.points) == 2:
             cid = self.canvas.create_line(
-                *elem.points[0], *elem.points[1], fill="#00ff88", width=2, tags="drawing"
+                *elem.points[0], *elem.points[1], fill=color, width=lw, tags="drawing"
             )
             ids.append(cid)
         elif elem.kind == "rect" and len(elem.points) == 2:
             cid = self.canvas.create_rectangle(
-                *elem.points[0], *elem.points[1], outline="#00ff88", width=2, tags="drawing"
+                *elem.points[0], *elem.points[1], outline=color, width=lw, tags="drawing"
             )
             ids.append(cid)
         elif elem.kind == "circle" and len(elem.points) == 2:
@@ -419,7 +630,8 @@ class DrawCanvas(ctk.CTkFrame):
             ex, ey = elem.points[1]
             r = math.hypot(ex - cx, ey - cy)
             cid = self.canvas.create_oval(
-                cx - r, cy - r, cx + r, cy + r, outline="#00ff88", width=2, tags="drawing"
+                cx - r, cy - r, cx + r, cy + r,
+                outline=color, width=lw, tags="drawing",
             )
             ids.append(cid)
         return ids
@@ -433,6 +645,7 @@ class DrawCanvas(ctk.CTkFrame):
         for cid in elem.canvas_ids:
             self.canvas.delete(cid)
         self.redo_stack.append(elem)
+        self._update_legend()
 
     def redo(self) -> None:
         if not self.redo_stack:
@@ -441,12 +654,14 @@ class DrawCanvas(ctk.CTkFrame):
         ids = self._render_element(elem)
         elem.canvas_ids = ids
         self.elements.append(elem)
+        self._update_legend()
 
     def clear(self) -> None:
         self.canvas.delete("drawing")
         self.canvas.delete("preview")
         self.elements.clear()
         self.redo_stack.clear()
+        self._update_legend()
 
     # ── Redraw ──────────────────────────────────────────────────────
 
@@ -470,22 +685,48 @@ class DrawCanvas(ctk.CTkFrame):
     # ── G-code generation ───────────────────────────────────────────
 
     def to_gcode(
-        self, speed: int = 1000, power: int = 500, fill_speed: int = 1500, fill_power: int = 600
+        self,
+        speed: int = 1000,
+        power: int = 500,
+        fill_speed: int = 1500,
+        fill_power: int = 600,
     ) -> str:
         """Convert all drawn elements to G-code.
 
-        fill_speed/fill_power: used for hatch fills (faster + less power = lighter grey)
+        Export order: Mark → Engrave → Cut (cut always last!).
+        Each element uses its own per-shape settings.
+        The speed/power params are fallbacks only.
         """
         lines = [
+            "; Generated by LaserMac v0.3.0",
+            "; Export order: Mark → Engrave → Cut",
             "G21         ; mm mode",
             "G90         ; absolute",
-            f"G1 F{speed}    ; feed rate",
             "M5          ; laser off",
             "",
         ]
 
-        for elem in self.elements:
-            gc = self._element_to_gcode(elem, speed, power, fill_speed, fill_power)
+        # Sort elements: mark → engrave → cut
+        sorted_elements = sorted(self.elements, key=lambda e: gcode_sort_key(e.operation))
+
+        current_op = None
+        for elem in sorted_elements:
+            if elem.operation != current_op:
+                current_op = elem.operation
+                label = operation_label(current_op)
+                lines.append(f"; ── {label} ──")
+                lines.append("")
+
+            s = elem.settings
+            gc = self._element_to_gcode(
+                elem,
+                speed=s.speed or speed,
+                power=s.power or power,
+                fill_speed=s.fill_speed or fill_speed,
+                fill_power=s.fill_power or fill_power,
+                hatch=s.fill_mode if s.operation != OPERATION_CUT else "none",
+                passes=s.passes if s.operation == OPERATION_CUT else 1,
+            )
             if gc:
                 lines.append(gc)
 
@@ -501,19 +742,20 @@ class DrawCanvas(ctk.CTkFrame):
         power: int,
         fill_speed: int = 1500,
         fill_power: int = 600,
+        hatch: str = "none",
+        passes: int = 1,
     ) -> str:
+        gc = ""
         if elem.kind == "pen":
-            return self._draw_stroke(elem.points, speed, power)
+            gc = self._draw_stroke(elem.points, speed, power)
         elif elem.kind == "line" and len(elem.points) == 2:
-            return self._draw_line_gcode(*elem.points[0], *elem.points[1], speed, power)
+            gc = self._draw_line_gcode(*elem.points[0], *elem.points[1], speed, power)
         elif elem.kind == "rect" and len(elem.points) == 2:
-            return self._draw_rect(
-                *elem.points[0],
-                *elem.points[1],
-                speed,
-                power,
-                fill_speed=fill_speed,
-                fill_power=fill_power,
+            gc = self._draw_rect(
+                *elem.points[0], *elem.points[1],
+                speed, power,
+                fill_speed=fill_speed, fill_power=fill_power,
+                hatch=hatch,
             )
         elif elem.kind == "circle" and len(elem.points) == 2:
             cx, cy = elem.points[0]
@@ -522,17 +764,27 @@ class DrawCanvas(ctk.CTkFrame):
             canvas_size = self.CANVAS_PX * self.zoom_level
             r_mm = r_px / canvas_size * self.work_w_mm
             mx, my = self.px_to_mm(cx, cy)
-            return self._draw_circle(mx, my, r_mm, speed, power)
-        return ""
+            gc = self._draw_circle(mx, my, r_mm, speed, power)
+
+        # Multi-pass for CUT
+        if passes > 1 and gc:
+            gc_lines = gc.split("\n")
+            repeated = []
+            for p in range(passes):
+                repeated.append(f"; Pass {p + 1}/{passes}")
+                repeated.extend(gc_lines)
+            gc = "\n".join(repeated)
+
+        return gc
 
     def _draw_stroke(self, points: list[tuple[float, float]], speed: int, power: int) -> str:
-        """Convert a freehand stroke to G-code."""
         if len(points) < 2:
             return ""
         lines: list[str] = []
         mx, my = self.px_to_mm(*points[0])
         lines.append(f"G0 X{mx} Y{my}")
         lines.append(f"M3 S{power}")
+        lines.append(f"G1 F{speed}")
         for pt in points[1:]:
             mx, my = self.px_to_mm(*pt)
             lines.append(f"G1 X{mx} Y{my}")
@@ -540,28 +792,15 @@ class DrawCanvas(ctk.CTkFrame):
         return "\n".join(lines)
 
     def _draw_rect(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        speed: int,
-        power: int,
-        fill_speed: int = 1500,
-        fill_power: int = 600,
-        hatch: str = "none",
-        hatch_spacing: float = 0.8,
+        self, x1: float, y1: float, x2: float, y2: float,
+        speed: int, power: int,
+        fill_speed: int = 1500, fill_power: int = 600,
+        hatch: str = "none", hatch_spacing: float = 0.8,
     ) -> str:
-        """Convert a rectangle (in px) to G-code.
-
-        hatch: 'none' | 'lines' | 'schraffur' (45°) | 'kreuz' (cross-hatch)
-        fill_speed/fill_power: faster + less power for fill = lighter grey tone
-        """
         p1 = self.px_to_mm(x1, y1)
         p2 = self.px_to_mm(x2, y1)
         p3 = self.px_to_mm(x2, y2)
         p4 = self.px_to_mm(x1, y2)
-        # Outline
         lines = [
             f"G0 X{p1[0]} Y{p1[1]}",
             f"M3 S{power}",
@@ -571,28 +810,21 @@ class DrawCanvas(ctk.CTkFrame):
             f"G1 X{p1[0]} Y{p1[1]} F{speed}",
             "M5",
         ]
-        # Hatch fill
         rx1, ry1 = min(p1[0], p3[0]), min(p1[1], p3[1])
         rx2, ry2 = max(p1[0], p3[0]), max(p1[1], p3[1])
         if hatch in ("lines", "schraffur", "kreuz"):
             lines.append(f"; hatch fill ({hatch}) F{fill_speed} S{fill_power}")
             lines += self._hatch_gcode(
-                rx1, ry1, rx2, ry2, mode=hatch, sp=hatch_spacing, speed=fill_speed, power=fill_power
+                rx1, ry1, rx2, ry2, mode=hatch, sp=hatch_spacing,
+                speed=fill_speed, power=fill_power,
             )
         return "\n".join(lines)
 
     def _hatch_gcode(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        mode: str = "schraffur",
-        sp: float = 0.8,
-        speed: int = 1500,
-        power: int = 600,
+        self, x1: float, y1: float, x2: float, y2: float,
+        mode: str = "schraffur", sp: float = 0.8,
+        speed: int = 1500, power: int = 600,
     ) -> list[str]:
-        """Generate hatch fill G-code lines. Fast + lower power = grey tone."""
         gc: list[str] = []
         w, h = x2 - x1, y2 - y1
 
@@ -614,7 +846,6 @@ class DrawCanvas(ctk.CTkFrame):
                 tog = not tog
 
         elif mode in ("schraffur", "kreuz"):
-            # 45° diagonals
             d = -h
             tog = False
             while d < w:
@@ -646,7 +877,6 @@ class DrawCanvas(ctk.CTkFrame):
                 tog = not tog
 
             if mode == "kreuz":
-                # 135° diagonals
                 d = 0
                 tog = False
                 while d < w + h:
@@ -676,11 +906,9 @@ class DrawCanvas(ctk.CTkFrame):
     def _draw_circle(
         self, cx: float, cy: float, r: float, speed: int, power: int, segments: int = 36
     ) -> str:
-        """Convert a circle (in mm) to G-code via line segments."""
         if r <= 0:
             return ""
         lines: list[str] = []
-        # Move to start point
         start_x = round(cx + r, 3)
         start_y = round(cy, 3)
         lines.append(f"G0 X{start_x} Y{start_y}")
@@ -696,13 +924,12 @@ class DrawCanvas(ctk.CTkFrame):
     def _draw_line_gcode(
         self, x1: float, y1: float, x2: float, y2: float, speed: int, power: int
     ) -> str:
-        """Convert a line (in px) to G-code."""
         mx1, my1 = self.px_to_mm(x1, y1)
         mx2, my2 = self.px_to_mm(x2, y2)
         lines = [
             f"G0 X{mx1} Y{my1}",
             f"M3 S{power}",
-            f"G1 X{mx2} Y{my2}",
+            f"G1 X{mx2} Y{my2} F{speed}",
             "M5",
         ]
         return "\n".join(lines)
@@ -744,7 +971,10 @@ class DrawCanvas(ctk.CTkFrame):
             f.write("\n".join(svg_lines))
 
     def _element_to_svg(self, elem: DrawElement) -> str:
-        style = 'stroke="#00ff88" stroke-width="0.5" fill="none"'
+        color = operation_color(elem.operation)
+        lw = operation_line_width(elem.operation) * 0.5
+        style = f'stroke="{color}" stroke-width="{lw}" fill="none"'
+
         if elem.kind == "pen" and len(elem.points) >= 2:
             pts_mm = [self.px_to_mm(*p) for p in elem.points]
             d = f"M {pts_mm[0][0]},{pts_mm[0][1]}"
@@ -770,14 +1000,27 @@ class DrawCanvas(ctk.CTkFrame):
             return f'  <circle cx="{cx}" cy="{cy}" r="{round(r, 3)}" {style}/>'
         return ""
 
+    def get_elements_as_dicts(self) -> list[dict]:
+        """Export elements for project save."""
+        return [e.to_dict() for e in self.elements]
+
+    def load_elements_from_dicts(self, data: list[dict]) -> None:
+        """Load elements from project data."""
+        self.clear()
+        for d in data:
+            elem = DrawElement.from_dict(d)
+            self.elements.append(elem)
+        self._redraw()
+        self._update_legend()
+
     # ── Button callbacks ────────────────────────────────────────────
 
     def _burn_click(self) -> None:
         speed = int(self.speed_slider.get())
         power = int(self.power_slider.get())
-        fill_speed = int(self.fill_speed_slider.get())
-        fill_power = int(self.fill_power_slider.get())
-        hatch = self.hatch_var.get()
+        fill_speed = int(self.fill_speed_slider.get()) if self.fill_speed_slider else 1500
+        fill_power = int(self.fill_power_slider.get()) if self.fill_power_slider else 600
+        hatch = self.hatch_var.get() if hasattr(self, "hatch_var") else "none"
         self.burn(speed, power, fill_speed=fill_speed, fill_power=fill_power, hatch=hatch)
 
     def _save_gcode_click(self) -> None:

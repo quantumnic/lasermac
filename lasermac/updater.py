@@ -8,7 +8,7 @@ import urllib.request
 from typing import Callable
 
 GITHUB_REPO = "quantumnic/lasermac"
-CURRENT_VERSION = "0.1.0"
+CURRENT_VERSION = "0.3.0"
 
 
 def check_for_update() -> dict | None:

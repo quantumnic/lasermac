@@ -1,6 +1,7 @@
 """G-code file parser and sender for LaserMac.
 
 Loads G-code files, tracks progress, and streams lines to GRBL.
+Enhanced with time estimation and G-code export headers.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 
@@ -35,6 +37,30 @@ class GcodeJob:
     def progress_percent(self) -> float:
         """Return progress as 0–100."""
         return self.progress * 100.0
+
+    @property
+    def bounds_size(self) -> tuple[float, float]:
+        """Return width and height of bounding box in mm."""
+        return (self.bounds[2] - self.bounds[0], self.bounds[3] - self.bounds[1])
+
+    @property
+    def estimated_time(self) -> float:
+        """Return estimated job time in seconds."""
+        return estimate_time(self.lines)
+
+    @property
+    def estimated_time_str(self) -> str:
+        """Return estimated time as human-readable string."""
+        t = self.estimated_time
+        if t < 60:
+            return f"{t:.0f}s"
+        mins = int(t // 60)
+        secs = int(t % 60)
+        if mins < 60:
+            return f"{mins}m{secs:02d}s"
+        hours = mins // 60
+        mins = mins % 60
+        return f"{hours}h{mins:02d}m"
 
 
 GCODE_EXTENSIONS = {".nc", ".gcode", ".gc", ".ngc", ".tap"}
@@ -221,3 +247,29 @@ class GcodeSender:
         self.job.running = False
         if self.on_complete and not self._stop_flag:
             self.on_complete()
+
+
+def export_gcode_with_header(
+    gcode_lines: list[str],
+    machine_name: str = "Unknown",
+    job_name: str = "Untitled",
+) -> str:
+    """Wrap G-code with a descriptive header comment block."""
+    bounds = _calculate_bounds(gcode_lines)
+    est = estimate_time(gcode_lines)
+    mins = int(est // 60)
+    secs = int(est % 60)
+
+    header = [
+        "; ── LaserMac G-code Export ──",
+        f"; Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"; Machine: {machine_name}",
+        f"; Job: {job_name}",
+        f"; Lines: {len(gcode_lines)}",
+        f"; Bounds: X[{bounds[0]:.1f} .. {bounds[2]:.1f}] Y[{bounds[1]:.1f} .. {bounds[3]:.1f}]",
+        f"; Size: {bounds[2] - bounds[0]:.1f} x {bounds[3] - bounds[1]:.1f} mm",
+        f"; Est. time: {mins}m{secs:02d}s",
+        "; ──────────────────────────────",
+        "",
+    ]
+    return "\n".join(header + gcode_lines)

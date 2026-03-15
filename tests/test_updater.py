@@ -40,10 +40,10 @@ class TestCheckForUpdate:
 
     @patch("lasermac.updater.urllib.request.urlopen")
     def test_update_available(self, mock_urlopen):
-        mock_urlopen.return_value = self._mock_response("v0.2.0", "https://gh.com/release")
+        mock_urlopen.return_value = self._mock_response("v0.4.0", "https://gh.com/release")
         result = updater.check_for_update()
         assert result is not None
-        assert result["version"] == "0.2.0"
+        assert result["version"] == "0.4.0"
         assert result["url"] == "https://gh.com/release"
         assert result["notes"] == "notes"
 
@@ -67,7 +67,7 @@ class TestCheckForUpdate:
 
     @patch("lasermac.updater.urllib.request.urlopen")
     def test_no_body(self, mock_urlopen):
-        data = json.dumps({"tag_name": "v0.3.0", "html_url": "https://x.com"}).encode()
+        data = json.dumps({"tag_name": "v0.4.0", "html_url": "https://x.com"}).encode()
         mock_resp = MagicMock()
         mock_resp.read.return_value = data
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
