@@ -53,10 +53,15 @@ class LaserMacApp(ctk.CTk):
         ).pack(padx=10, anchor="w")
 
         # Connection panel
-        ConnectionPanel(sidebar, self.grbl).pack(fill="x", padx=5, pady=5)
+        self.connection_panel = ConnectionPanel(sidebar, self.grbl)
+        self.connection_panel.pack(fill="x", padx=5, pady=5)
 
         # Controls panel
-        ControlsPanel(sidebar, self.grbl).pack(fill="x", padx=5, pady=5)
+        self.controls_panel = ControlsPanel(sidebar, self.grbl)
+        self.controls_panel.pack(fill="x", padx=5, pady=5)
+
+        # Wire auto-detect → controls
+        self.connection_panel.on_machine_detected = self.controls_panel.apply_machine_config
 
         # Laser test controls
         laser_frame = ctk.CTkFrame(sidebar)

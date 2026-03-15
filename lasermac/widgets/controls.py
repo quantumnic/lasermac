@@ -129,6 +129,14 @@ class ControlsPanel(ctk.CTkFrame):
         # Register status callback
         self.grbl.on_status = self._update_status
 
+    def apply_machine_config(self, cfg: dict) -> None:
+        """Auto-apply machine config from GRBL detect_machine()."""
+        self.invert_x.set(cfg.get("invert_x", False))
+        self.invert_y.set(cfg.get("invert_y", False))
+        # Update feed max suggestion based on machine speed
+        max_speed = int(cfg.get("max_speed", 6000))
+        self.feed_var.set(str(min(1000, max_speed)))
+
     def _jog(self, axis: str, direction: int) -> None:
         """Execute a jog move, respecting axis invert settings."""
         if axis == "X" and self.invert_x.get():

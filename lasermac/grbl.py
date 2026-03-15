@@ -133,6 +133,46 @@ class GrblController:
             )
         return result
 
+    def read_settings(self) -> dict:
+        """Read all GRBL $$ settings and return as dict {int: float}."""
+        settings = {}
+        if not self.connected or not self.serial:
+            return settings
+        # Drain buffer
+        self.serial.flushInput()
+        self.serial.write(b"$$\n")
+        time.sleep(0.8)
+        raw = self.serial.read(self.serial.in_waiting or 1).decode(errors="ignore")
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("$") and "=" in line:
+                try:
+                    k, v = line[1:].split("=", 1)
+                    settings[int(k)] = float(v)
+                except ValueError:
+                    pass
+        return settings
+
+    def detect_machine(self) -> dict:
+        """Auto-detect machine config from GRBL settings.
+        Returns dict with: work_x, work_y, invert_x, invert_y,
+        max_power, max_speed, steps_x, steps_y, laser_mode
+        """
+        s = self.read_settings()
+        dir_invert = int(s.get(3, 0))  # $3 bitmask: bit0=X, bit1=Y
+        return {
+            "work_x":    s.get(130, 300.0),
+            "work_y":    s.get(131, 300.0),
+            "invert_x":  bool(dir_invert & 1),
+            "invert_y":  bool(dir_invert & 2),
+            "max_power": int(s.get(30, 1000)),
+            "max_speed": s.get(110, 6000.0),
+            "steps_x":   s.get(100, 80.0),
+            "steps_y":   s.get(101, 80.0),
+            "laser_mode": bool(s.get(32, 0)),
+            "raw": s,
+        }
+
     def connect(self, port: str, baud: int = 115200) -> bool:
         """Connect to GRBL device."""
         try:

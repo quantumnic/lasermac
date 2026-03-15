@@ -60,6 +60,9 @@ class ConnectionPanel(ctk.CTkFrame):
         self.status_label = ctk.CTkLabel(self, text="● Disconnected", text_color="#ff6b6b")
         self.status_label.pack(padx=10, pady=(0, 10))
 
+        # Callback: called with machine config dict after auto-detect
+        self.on_machine_detected: callable = None
+
         # Register callback
         self.grbl.on_connect = self._on_connect_change
 
@@ -120,7 +123,29 @@ class ConnectionPanel(ctk.CTkFrame):
         """Update UI when connection state changes."""
         if connected:
             self.connect_btn.configure(text="Disconnect", fg_color="#da3633", hover_color="#f85149")
-            self.status_label.configure(text="● Connected", text_color="#3fb950")
+            self.status_label.configure(text="● Connected — detecting...", text_color="#e3b341")
+            self.after(800, self._auto_detect_machine)
         else:
             self.connect_btn.configure(text="Connect", fg_color="#2ea043", hover_color="#3fb950")
             self.status_label.configure(text="● Disconnected", text_color="#ff6b6b")
+
+    def _auto_detect_machine(self) -> None:
+        """Read GRBL settings and auto-configure."""
+        try:
+            cfg = self.grbl.detect_machine()
+            inv = []
+            if cfg["invert_x"]:
+                inv.append("X")
+            if cfg["invert_y"]:
+                inv.append("Y")
+            inv_str = f"  Inverted: {'+'.join(inv)}" if inv else ""
+            self.status_label.configure(
+                text=f"● {cfg['work_x']:.0f}×{cfg['work_y']:.0f}mm  S{cfg['max_power']}{inv_str}",
+                text_color="#3fb950",
+            )
+            if hasattr(self, "on_machine_detected") and self.on_machine_detected:
+                self.on_machine_detected(cfg)
+        except Exception:
+            self.status_label.configure(
+                text="● Connected (detect failed)", text_color="#e3b341"
+            )
