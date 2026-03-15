@@ -200,8 +200,11 @@ class DrawCanvas(ctk.CTkFrame):
         self.canvas.bind("<ButtonRelease-1>", self.on_mouse_up)
 
         # Keyboard shortcuts
-        self.bind_all("<Control-z>", lambda e: self.undo())
-        self.bind_all("<Control-y>", lambda e: self.redo())
+        # bind_all not allowed in CustomTkinter — bind to canvas widget instead
+        self.canvas.bind("<Control-z>", lambda e: self.undo())
+        self.canvas.bind("<Control-y>", lambda e: self.redo())
+        self.canvas.bind("<Command-z>", lambda e: self.undo())   # macOS
+        self.canvas.bind("<Command-y>", lambda e: self.redo())   # macOS
 
         # ── Layer legend (bottom of canvas) ──
         legend_frame = ctk.CTkFrame(self, fg_color="transparent", height=25)
