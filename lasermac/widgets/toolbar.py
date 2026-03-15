@@ -68,10 +68,8 @@ class Toolbar(ctk.CTkFrame):
 
         self.stop_btn = ctk.CTkButton(
             job_group, text="⏹ Stop", width=65, height=28,
-            **button_style("danger"), height_override=28,
+            **button_style("danger"),
         )
-        # Fix: button_style doesn't know height_override
-        self.stop_btn.configure(height=28)
         self.stop_btn.pack(side="left", padx=2)
 
         # Separator
