@@ -33,6 +33,7 @@ from lasermac.layers import (
     operation_label,
     operation_line_width,
 )
+from lasermac.theme import COLORS, FONTS, button_style
 
 if TYPE_CHECKING:
     from lasermac.grbl import GrblController
@@ -115,7 +116,9 @@ class DrawCanvas(ctk.CTkFrame):
         self.grid_rowconfigure(1, weight=1)
 
         # ── Toolbar row 1: tools + undo/redo ──
-        toolbar = ctk.CTkFrame(self)
+        toolbar = ctk.CTkFrame(self, fg_color=COLORS["bg_card"],
+                               corner_radius=0, border_width=1,
+                               border_color=COLORS["border"])
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 2))
 
         tool_icons = {
@@ -131,66 +134,77 @@ class DrawCanvas(ctk.CTkFrame):
             btn = ctk.CTkButton(
                 toolbar,
                 text=tool_icons.get(t, t),
-                width=40,
+                width=40, height=30,
                 command=lambda t=t: self.set_tool(t),
+                **button_style("default"),
             )
             btn.pack(side="left", padx=2)
             self._tool_buttons[t] = btn
 
         # Separator
-        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
+        ctk.CTkLabel(toolbar, text="│", width=10,
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=4)
 
         # ── OPERATION BUTTONS — the central UX element ──
         self._op_buttons: dict[str, ctk.CTkButton] = {}
         op_configs = {
-            OPERATION_CUT: ("✂️ Cut", "#FF3333", "#CC2222"),
-            OPERATION_ENGRAVE: ("✏️ Engrave", "#3399FF", "#2277DD"),
-            OPERATION_MARK: ("🖊️ Mark", "#33CC33", "#22AA22"),
+            OPERATION_CUT: ("✂️ Cut", COLORS["cut"], "#CC2222"),
+            OPERATION_ENGRAVE: ("✏️ Engrave", COLORS["engrave"], "#2E77CC"),
+            OPERATION_MARK: ("🖊️ Mark", COLORS["mark"], "#22AA22"),
         }
         for op, (label, color, hover) in op_configs.items():
+            is_active = op == self.current_operation
             btn = ctk.CTkButton(
                 toolbar,
                 text=label,
-                width=90,
-                fg_color=color if op == self.current_operation else "#333333",
-                hover_color=hover,
+                width=90, height=30,
+                fg_color=color if is_active else COLORS["bg_elevated"],
+                hover_color=hover if is_active else COLORS["bg_hover"],
+                text_color="#FFFFFF" if is_active else COLORS["text_muted"],
+                corner_radius=8,
                 command=lambda o=op: self.set_operation(o),
             )
             btn.pack(side="left", padx=2)
             self._op_buttons[op] = btn
 
         # Separator
-        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
+        ctk.CTkLabel(toolbar, text="│", width=10,
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=4)
 
-        ctk.CTkButton(toolbar, text="↩️", width=40, command=self.undo).pack(side="left", padx=2)
-        ctk.CTkButton(toolbar, text="↪️", width=40, command=self.redo).pack(side="left", padx=2)
-        ctk.CTkButton(toolbar, text="🗑 Clear", width=70, command=self.clear).pack(
-            side="left", padx=2
-        )
+        ctk.CTkButton(toolbar, text="↩️", width=40, height=30, command=self.undo,
+                      **button_style("ghost")).pack(side="left", padx=2)
+        ctk.CTkButton(toolbar, text="↪️", width=40, height=30, command=self.redo,
+                      **button_style("ghost")).pack(side="left", padx=2)
+        ctk.CTkButton(toolbar, text="🗑 Clear", width=70, height=30, command=self.clear,
+                      **button_style("ghost")).pack(side="left", padx=2)
 
-        ctk.CTkLabel(toolbar, text="│", width=10).pack(side="left", padx=4)
+        ctk.CTkLabel(toolbar, text="│", width=10,
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=4)
 
         self._grid_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(toolbar, text="Grid", variable=self._grid_var, command=self._redraw).pack(
-            side="left", padx=4
-        )
+        ctk.CTkCheckBox(
+            toolbar, text="Grid", variable=self._grid_var, command=self._redraw,
+            font=FONTS["small"], text_color=COLORS["text_secondary"],
+            fg_color=COLORS["bg_elevated"], hover_color=COLORS["bg_hover"],
+            checkmark_color=COLORS["accent"],
+        ).pack(side="left", padx=4)
 
-        ctk.CTkButton(toolbar, text="🔍+", width=35, command=self._zoom_in).pack(
-            side="left", padx=2
-        )
-        ctk.CTkButton(toolbar, text="🔍−", width=35, command=self._zoom_out).pack(
-            side="left", padx=2
-        )
+        ctk.CTkButton(toolbar, text="🔍+", width=35, height=30, command=self._zoom_in,
+                      **button_style("ghost")).pack(side="left", padx=2)
+        ctk.CTkButton(toolbar, text="🔍−", width=35, height=30, command=self._zoom_out,
+                      **button_style("ghost")).pack(side="left", padx=2)
 
         # ── Canvas ──
-        canvas_frame = ctk.CTkFrame(self)
+        canvas_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_base"],
+                                    corner_radius=6, border_width=1,
+                                    border_color=COLORS["border"])
         canvas_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
 
         self.canvas = tk.Canvas(
             canvas_frame,
             width=self.CANVAS_PX,
             height=self.CANVAS_PX,
-            bg="#1a1a2e",
+            bg=COLORS["canvas_bg"],
             highlightthickness=0,
         )
         self.canvas.pack(expand=True)
@@ -216,13 +230,15 @@ class DrawCanvas(ctk.CTkFrame):
                 legend_frame,
                 text=f"● {op.upper()} (0)",
                 text_color=color,
-                font=("", 11),
+                font=FONTS["muted"],
             )
             lbl.pack(side="left", padx=10)
             self._legend_labels[op] = lbl
 
         # ── Bottom panel: operation settings + actions ──
-        bottom = ctk.CTkFrame(self)
+        bottom = ctk.CTkFrame(self, fg_color=COLORS["bg_card"],
+                              corner_radius=8, border_width=1,
+                              border_color=COLORS["border"])
         bottom.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=(2, 5))
 
         # Operation settings (dynamic)
@@ -237,17 +253,15 @@ class DrawCanvas(ctk.CTkFrame):
         ctk.CTkButton(
             actions,
             text="🔥 Burn This!",
-            fg_color="#da3633",
-            hover_color="#f85149",
             command=self._burn_click,
+            height=30,
+            **button_style("danger"),
         ).pack(side="right", padx=5)
 
-        ctk.CTkButton(actions, text="💾 G-code", command=self._save_gcode_click).pack(
-            side="right", padx=2
-        )
-        ctk.CTkButton(actions, text="💾 SVG", command=self._save_svg_click).pack(
-            side="right", padx=2
-        )
+        ctk.CTkButton(actions, text="💾 G-code", command=self._save_gcode_click,
+                      height=28, **button_style("default")).pack(side="right", padx=2)
+        ctk.CTkButton(actions, text="💾 SVG", command=self._save_svg_click,
+                      height=28, **button_style("default")).pack(side="right", padx=2)
 
         # Initial draw
         self._draw_grid()
@@ -369,15 +383,18 @@ class DrawCanvas(ctk.CTkFrame):
     def _highlight_operation(self) -> None:
         """Highlight the active operation button."""
         op_colors = {
-            OPERATION_CUT: "#FF3333",
-            OPERATION_ENGRAVE: "#3399FF",
-            OPERATION_MARK: "#33CC33",
+            OPERATION_CUT: (COLORS["cut"], "#CC2222"),
+            OPERATION_ENGRAVE: (COLORS["engrave"], "#2E77CC"),
+            OPERATION_MARK: (COLORS["mark"], "#22AA22"),
         }
         for op, btn in self._op_buttons.items():
             if op == self.current_operation:
-                btn.configure(fg_color=op_colors[op])
+                color, hover = op_colors[op]
+                btn.configure(fg_color=color, hover_color=hover, text_color="#FFFFFF")
             else:
-                btn.configure(fg_color="#333333")
+                btn.configure(fg_color=COLORS["bg_elevated"],
+                              hover_color=COLORS["bg_hover"],
+                              text_color=COLORS["text_muted"])
 
     def _update_legend(self) -> None:
         """Update the layer legend counts."""
@@ -397,9 +414,9 @@ class DrawCanvas(ctk.CTkFrame):
     def _highlight_tool(self) -> None:
         for name, btn in self._tool_buttons.items():
             if name == self.current_tool:
-                btn.configure(fg_color="#1f6aa5")
+                btn.configure(fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"])
             else:
-                btn.configure(fg_color=["#3a7ebf", "#1f538d"])
+                btn.configure(fg_color=COLORS["bg_elevated"], hover_color=COLORS["bg_hover"])
 
     # ── Grid / zoom ─────────────────────────────────────────────────
 
@@ -413,11 +430,11 @@ class DrawCanvas(ctk.CTkFrame):
         size = int(self.CANVAS_PX * self.zoom_level)
         x = step_px
         while x < size:
-            self.canvas.create_line(x, 0, x, size, fill="#2a2a4a", tags="grid")
+            self.canvas.create_line(x, 0, x, size, fill=COLORS["canvas_grid"], tags="grid")
             x += step_px
         y = step_px
         while y < size:
-            self.canvas.create_line(0, y, size, y, fill="#2a2a4a", tags="grid")
+            self.canvas.create_line(0, y, size, y, fill=COLORS["canvas_grid"], tags="grid")
             y += step_px
 
     def _zoom_in(self) -> None:

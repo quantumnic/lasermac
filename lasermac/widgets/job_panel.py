@@ -12,6 +12,7 @@ from lasermac.grbl import GrblController
 from lasermac.image_converter import image_to_gcode
 from lasermac.preview import PreviewCanvas
 from lasermac.svg_converter import svg_to_gcode
+from lasermac.theme import COLORS, FONTS, button_style
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif"}
 GCODE_EXTENSIONS = {".nc", ".gcode", ".gc", ".ngc", ".tap"}
@@ -31,13 +32,15 @@ class JobPanel(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(10, 5))
 
-        ctk.CTkLabel(header, text="📁 Job", font=("", 16, "bold")).pack(side="left")
-        ctk.CTkButton(header, text="Load File", command=self._load_file, width=100).pack(
-            side="right"
-        )
+        ctk.CTkLabel(header, text="📁 Job", font=FONTS["title"],
+                     text_color=COLORS["text_primary"]).pack(side="left")
+        ctk.CTkButton(header, text="Load File", command=self._load_file,
+                      width=100, height=28, **button_style("accent")).pack(side="right")
 
         # File info
-        self.file_label = ctk.CTkLabel(self, text="No file loaded", text_color="#888888")
+        self.file_label = ctk.CTkLabel(self, text="No file loaded",
+                                       text_color=COLORS["text_muted"],
+                                       font=FONTS["small"])
         self.file_label.pack(padx=10, anchor="w")
 
         # Preview canvas
@@ -66,11 +69,16 @@ class JobPanel(ctk.CTkFrame):
         ctk.CTkLabel(override_frame, text="S").pack(side="left")
 
         # Progress
-        self.progress_bar = ctk.CTkProgressBar(self)
+        self.progress_bar = ctk.CTkProgressBar(
+            self, progress_color=COLORS["accent"],
+            fg_color=COLORS["bg_elevated"],
+        )
         self.progress_bar.pack(fill="x", padx=10, pady=5)
         self.progress_bar.set(0)
 
-        self.progress_label = ctk.CTkLabel(self, text="0%")
+        self.progress_label = ctk.CTkLabel(self, text="0%",
+                                           text_color=COLORS["text_secondary"],
+                                           font=FONTS["small"])
         self.progress_label.pack(padx=10)
 
         # Control buttons
@@ -78,42 +86,30 @@ class JobPanel(ctk.CTkFrame):
         btn_frame.pack(fill="x", padx=10, pady=(5, 10))
 
         self.start_btn = ctk.CTkButton(
-            btn_frame,
-            text="▶ Start",
-            command=self._start_job,
-            fg_color="#2ea043",
-            hover_color="#3fb950",
-            width=80,
+            btn_frame, text="▶ Start", command=self._start_job,
+            width=80, height=30,
+            fg_color=COLORS["connected"], hover_color="#4CD964",
+            text_color="#FFFFFF", corner_radius=8,
         )
         self.start_btn.pack(side="left", padx=2)
 
         self.pause_btn = ctk.CTkButton(
-            btn_frame,
-            text="⏸ Pause",
-            command=self._pause_job,
-            fg_color="#d29922",
-            hover_color="#e3b341",
-            width=80,
+            btn_frame, text="⏸ Pause", command=self._pause_job,
+            width=80, height=30,
+            fg_color=COLORS["running"], hover_color="#FFB340",
+            text_color="#FFFFFF", corner_radius=8,
         )
         self.pause_btn.pack(side="left", padx=2)
 
         self.stop_btn = ctk.CTkButton(
-            btn_frame,
-            text="⏹ Stop",
-            command=self._stop_job,
-            fg_color="#da3633",
-            hover_color="#f85149",
-            width=80,
+            btn_frame, text="⏹ Stop", command=self._stop_job,
+            width=80, height=30, **button_style("danger"),
         )
         self.stop_btn.pack(side="left", padx=2)
 
         ctk.CTkButton(
-            btn_frame,
-            text="🔲 Frame",
-            command=self._run_frame,
-            fg_color="#333333",
-            hover_color="#444444",
-            width=80,
+            btn_frame, text="🔲 Frame", command=self._run_frame,
+            width=80, height=30, **button_style("default"),
         ).pack(side="left", padx=2)
 
         # Register callbacks
