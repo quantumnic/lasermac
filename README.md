@@ -4,8 +4,6 @@
 
 A modern alternative to LightBurn — built with Python and CustomTkinter. Works with Totem S, xTool, Ortur, Atomstack, and any GRBL-compatible laser engraver or CNC machine.
 
-![LaserMac Screenshot](docs/screenshot.png)
-*Screenshot coming soon*
 
 ---
 
@@ -37,10 +35,10 @@ A modern alternative to LightBurn — built with Python and CustomTkinter. Works
 
 ## 📦 Installation
 
-### From PyPI (recommended)
+### With pip (from GitHub)
 
 ```bash
-pip install lasermac
+pip install git+https://github.com/quantumnic/lasermac.git
 ```
 
 ### From source
